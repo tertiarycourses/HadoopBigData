@@ -1,0 +1,312 @@
+Some exercises are for reference and some for demonstration.
+
+HDFS file commands
+
+1) pwd
+2) hadoop fs -ls
+3) Create a text file called example.txt using the text editor in your local directory
+4) hadoop fs -put example.txt
+// helps to copy files from local system into the HDFS
+5) hadoop fs -ls  // to check
+
+// Retrieving files
+hadoop fs -get example.txt .
+// to copy into our local working directory
+
+
+Exercise on flume
+
+Apache Flume is a top level project at the Apache Software Foundation. 
+Step 1 : Check Flume installation. Flume is installed as a part of quickstart VM. 
+$ rpm –qa | grep –i flume-ng 
+This displays the flume installation files
+
+cd /etc/flume-ng/conf
+pwd
+/etc/flume-ng/conf
+
+ls -ltr
+
+Step 4: Flume default configuration file. 
+$ vim flume.conf
+
+Step 5 :Flume command and its options. We will be using the agent command
+
+Step 6:Changing flume.conf file
+
+// put in details on source and sink
+
+
+Step 7:Starting of a flume agent 
+An agent is started using a shell script called flume-ng which is located in the bin directory of the Flume distribution. 
+$ bin/flume-ng agent –conf conf –conf-file ./flume.conf –name a1 –Dflume.root.logger=INFO,console
+
+Step 8 : Testing the new Configuration 
+Open the new terminal and then we can then telnet port 44444 and send Flume an event. The original Flume terminal will output the event in a log message.
+
+
+
+//use of scoop
+
+scoop help
+
+Step 1
+[cloudera@quickstart ~]$ sqoop import-all-tables \
+    -m 1 \
+    --connect jdbc:mysql://quickstart:3306/retail_db \
+    --username=retail_dba \
+    --password=cloudera \
+    --compression-codec=snappy \
+    --as-parquetfile \
+    --warehouse-dir=/user/hive/warehouse \
+    --hive-import
+
+
+
+
+
+
+
+
+
+
+Step 2
+[cloudera@quickstart ~]$ hadoop fs -ls /user/hive/warehouse/
+[cloudera@quickstart ~]$ hadoop fs -ls /user/hive/warehouse/categories/
+
+
+Hive and Impala also allow you to create tables by defining a schema over existing files with 'CREATE EXTERNAL TABLE' statements, similar to traditional relational databases. But Sqoop already created these tables for us, so we can go ahead and query them.
+
+n the QuickStart VM, the administrator username for Hue is 'cloudera' and the password is 'cloudera'.
+
+Once you are inside of Hue, click on Query Editors, and open the Impala Query Editor. 
+
+
+
+invalidate metadata;
+
+show tables;
+
+
+-- Most popular product categories
+select c.category_name, count(order_item_quantity) as count
+from order_items oi
+inner join products p on oi.order_item_product_id = p.product_id
+inner join categories c on c.category_id = p.product_category_id
+group by c.category_name
+order by count desc
+limit 10;
+
+-- top 10 revenue generating products
+select p.product_id, p.product_name, r.revenue
+from products p inner join
+(select oi.order_item_product_id, sum(cast(oi.order_item_subtotal as float)) as revenue
+from order_items oi inner join orders o
+on oi.order_item_order_id = o.order_id
+where o.order_status <> 'CANCELED'
+and o.order_status <> 'SUSPECTED_FRAUD'
+group by order_item_product_id) r
+on p.product_id = r.order_item_product_id
+order by r.revenue desc
+limit 10;
+
+
+
+
+
+
+// checking pig installation
+Step 1: Checking the pig installation. Pig is installed as a part of quickstart vm 
+$rpm –qa |grep –i pig 
+
+Step 2: Open Pig Shell which display the grunt prompt. This is used to run user queries in high level query language called Pig Latin 
+$ pig –x local
+
+
+Exercise 2
+
+cloudera@quickstart ~]$ sudo -u hdfs hadoop fs -mkdir /user/hive/warehouse/original_access_logs
+[cloudera@quickstart ~]$ sudo -u hdfs hadoop fs -copyFromLocal /opt/examples/log_files/access.log.2 /user/hive/warehouse/original_access_logs
+
+
+[cloudera@quickstart ~]$ hadoop fs -ls /user/hive/warehouse/original_access_logs
+
+
+
+CREATE EXTERNAL TABLE intermediate_access_logs (
+    ip STRING,
+    date STRING,
+    method STRING,
+    url STRING,
+    http_version STRING,
+    code1 STRING,
+    code2 STRING,
+    dash STRING,
+    user_agent STRING)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.contrib.serde2.RegexSerDe'
+WITH SERDEPROPERTIES (
+    'input.regex' = '([^ ]*) - - \\[([^\\]]*)\\] "([^\ ]*) ([^\ ]*) ([^\ ]*)" (\\d*) (\\d*) "([^"]*)" "([^"]*)"',
+    'output.format.string' = "%1$$s %2$$s %3$$s %4$$s %5$$s %6$$s %7$$s %8$$s %9$$s")
+LOCATION '/user/hive/warehouse/original_access_logs';
+
+CREATE EXTERNAL TABLE tokenized_access_logs (
+    ip STRING,
+    date STRING,
+    method STRING,
+    url STRING,
+    http_version STRING,
+    code1 STRING,
+    code2 STRING,
+    dash STRING,
+    user_agent STRING)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ','
+LOCATION '/user/hive/warehouse/tokenized_access_logs';
+
+ADD JAR /usr/lib/hive/lib/hive-contrib.jar;
+
+INSERT OVERWRITE TABLE tokenized_access_logs SELECT * FROM intermediate_access_logs;
+
+
+
+invalidate metadata;
+
+
+
+select count(*),url from tokenized_access_logs
+where url like '%\/product\/%'
+group by url order by count(*) desc;
+
+
+Exercise 3
+
+[cloudera@quickstart ~]$ spark-shell --master yarn-client
+
+
+// First we're going to import the classes we need
+
+import org.apache.hadoop.mapreduce.Job
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat
+import org.apache.avro.generic.GenericRecord
+import parquet.hadoop.ParquetInputFormat
+import parquet.avro.AvroReadSupport
+import org.apache.spark.rdd.RDD
+
+// Then we create RDD's for 2 of the files we imported from MySQL with Sqoop
+// RDD's are Spark's data structures for working with distributed datasets
+
+def rddFromParquetHdfsFile(path: String): RDD[GenericRecord] = {
+    val job = new Job()
+    FileInputFormat.setInputPaths(job, path)
+    ParquetInputFormat.setReadSupportClass(job,
+        classOf[AvroReadSupport[GenericRecord]])
+    return sc.newAPIHadoopRDD(job.getConfiguration,
+        classOf[ParquetInputFormat[GenericRecord]],
+        classOf[Void],
+        classOf[GenericRecord]).map(x => x._2)
+}
+
+val warehouse = "hdfs://quickstart/user/hive/warehouse/"
+val order_items = rddFromParquetHdfsFile(warehouse + "order_items");
+val products = rddFromParquetHdfsFile(warehouse + "products");
+
+
+
+// Next, we extract the fields from order_items and products that we care about
+// and get a list of every product, its name and quantity, grouped by order
+
+val orders = order_items.map { x => (
+    x.get("order_item_product_id"),
+    (x.get("order_item_order_id"), x.get("order_item_quantity")))
+}.join(
+  products.map { x => (
+    x.get("product_id"),
+    (x.get("product_name")))
+  }
+).map(x => (
+    scala.Int.unbox(x._2._1._1), // order_id
+    (
+        scala.Int.unbox(x._2._1._2), // quantity
+        x._2._2.toString // product_name
+    )
+)).groupByKey()
+
+// Finally, we tally how many times each combination of products appears
+// together in an order, then we sort them and take the 10 most common
+
+
+
+println(mostCommon.deep.mkString("\n"))
+
+exit
+
+Exercise 4
+
+If you were doing this on your own, you would generate the configs by executing the following command: 
+
+[cloudera@quickstart ~]$ solrctl --zk quickstart:2181/solr instancedir --generate solr_configs
+
+
+[cloudera@quickstart ~]$ cd /opt/examples/flume
+[cloudera@quickstart ~]$ solrctl --zk quickstart:2181/solr instancedir --create live_logs ./solr_configs
+
+[cloudera@quickstart ~]$ solrctl --zk quickstart:2181/solr collection --create live_logs -s 
+
+
+You can verify that you successfully created your collection in Solr by going to Hue, and clicking Search in the top menu
+
+
+Then click on Indexes from the top right to see all of the indexes/collections
+
+Now you can see the collection that we just created, live_logs, click on it.
+
+You are now viewing the fields that we defined in our schema.xml file
+
+
+Starting the Log Generator
+
+[cloudera@quickstart ~]$ start_logs
+
+[cloudera@quickstart ~]$ tail_logs
+
+When you're done watching the logs, you can hit <Ctrl + C> to return to your terminal. You should see a screen similar to the one below: 
+
+[cloudera@quickstart ~]$ stop_logs
+
+Start the Flume agent by executing the following command:
+
+[cloudera@quickstart ~]$ flume-ng agent \
+    --conf /opt/examples/flume/conf \
+    --conf-file /opt/examples/flume/conf/flume.conf \
+    --name agent1 \
+    -Dflume.root.logger=DEBUG,INFO,console
+Now you can go back to the Hue UI (refer back to your cluster's guidance page for the link), and click 'Search' from the collection's page: 
+
+You will be able to search, drill down into, and browse the events that have been indexed. 
+
+
+Exercise 5
+
+
+Building a Dashboard
+
+To get started with building a dashboard with Hue, click on the pen icon.
+This will take you into the edit-mode where you can choose different widgets and layouts that you would like to see. You can choose a number of options and configurations here, but for now, just drag a barchart into the top gray row.
+
+
+This will bring up the list of fields that are present in our index so that you can choose which field you would like to group by. Let's choose request_date.
+
+For the sake of our display, choose +15MINUTES for the INTERVAL.
+
+You aren't limited to a single column, you can view this as a two-column display as well. Select the two-column layout from the top left.
+
+While you're here, let's drag a pie chart to the newly created row in the left column.
+
+
+This time, let's choose department as the field that we want to group by for our pie chart.
+
+Things are really starting to take shape! Let's add a Facet filter to the left hand side, and select product as the facet.
+
+Now that we are satisfied with our changes, let's click on the pencil icon to exit edit mode.
+
+And save our dashboard.
+
